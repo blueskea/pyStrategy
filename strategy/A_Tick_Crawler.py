@@ -1,0 +1,235 @@
+# encoding: UTF-8
+
+from ctaTemplate import *
+
+exch_symbols = {
+    # 上海期货交易所 - 20
+    "SHFE": [
+        "cu",  # 铜
+        "bc",  # 铜(BC)
+        "al",  # 铝
+        "zn",  # 锌
+        "pb",  # 铅
+        "ni",  # 镍
+        "sn",  # 锡
+        "au",  # 黄金
+        "ag",  # 白银
+        "rb",  # 螺纹钢
+        "wr",  # 线材
+        "hc",  # 热轧卷板
+        "ss",  # 不锈钢
+        "sc",  # 原油
+        "lu",  # 低硫燃料油
+        "fu",  # 燃料油
+        "bu",  # 石油沥青
+        "ru",  # 天然橡胶
+        "nr",  # 20号胶
+        "sp"  # 纸浆
+    ],
+    # 大连商品交易所 - 21
+    "DCE": [
+        "a",  # 豆一
+        "b",  # 豆二
+        "bb",  # 胶合板
+        "c",  # 玉米
+        "cs",  # 玉米淀粉
+        "eb",  # 苯乙烯
+        "eg",  # 乙二醇
+        "fb",  # 纤维板
+        "i",  # 铁矿石
+        "j",  # 焦炭
+        "jd",  # 鸡蛋
+        "jm",  # 焦煤
+        "l",  # 聚乙烯(塑料)
+        "lh",  # 生猪
+        "m",  # 豆粕
+        "p",  # 棕榈油
+        "pg",  # 液化石油气(LPG)
+        "pp",  # 聚丙烯苯(PP)
+        "rr",  # 粳米
+        "v",  # 聚氯乙烯(PVE)
+        "y"  # 豆油
+    ],
+    # 郑州商品交易所 - 23
+    "CZCE": [
+        "AP",  # 苹果
+        "CF",  # 棉花
+        "CJ",  # 红枣
+        "CY",  # 棉纱
+        "FG",  # 玻璃
+        "JR",  # 粳稻
+        "LR",  # 晚籼稻
+        "MA",  # 甲醇
+        "OI",  # 菜籽油
+        "PF",  # 短纤
+        "PK",  # 花生
+        "PM",  # 普麦
+        "RI",  # 早籼稻
+        "RM",  # 菜籽粕
+        "RS",  # 油菜籽
+        "SA",  # 纯碱
+        "SF",  # 硅铁
+        "SM",  # 锰硅
+        "SR",  # 白糖
+        "TA",  # PTA
+        "UR",  # 尿素
+        "WH",  # 强麦
+        "ZC",  # 动力煤
+    ]
+}
+
+
+class A_Tick_Crawler(CtaTemplate):
+    """Tick Crawler"""
+    className = 'A_Tick_Crawler'
+    author = 'Jonas'
+
+    # 参数映射表: 动态设置参数用
+    paramMap = {
+        "vtSymbol": "合约列表",
+        "exchange": "交易所",
+        "save_path": "数据保存路径",
+        "fresh_count": "刷新频率"
+    }
+    paramList = list(paramMap.keys())
+
+    # 变量映射表: 显示在UI上用
+    varMap = {
+        "start_time": "StartTime",
+        "count": "Count"
+    }
+    varList = list(varMap.keys())
+
+    def __init__(self, ctaEngine=None, setting={}):
+        super().__init__(ctaEngine, setting)
+
+        # extract all contracts of 3 main exchange
+        contract_list = []
+        exchange_list = []
+        for exch, codes in exch_symbols.items():
+            for code in codes:
+                contracts = self.get_InstListByExchAndProduct(exch, code)  # {'1': ['cu2210', 'cu2207', 'cuMain']}
+                if not contracts:
+                    self.output(f"exch={exch}, code={code}: no contracts")
+                    continue
+                contracts = list(contracts.values())[0]  # ['cu2210', 'cu2207', 'cuMain']
+                contracts = list(filter(lambda name: "Main" not in name, contracts))  # ['cu2210', 'cu2207']
+                for contract in contracts:
+                    contract_list.append(contract)
+                    exchange_list.append(exch)
+        self.output(f"contracts are: {','.join(contract_list)}")
+        self.output(f"contracts count: {len(contract_list)}")
+
+        # set default parameters
+        self.vtSymbol = ";".join(contract_list)
+        self.exchange = ";".join(exchange_list)
+        self.save_path = os.path.abspath(os.path.dirname(__file__))
+        self.fresh_count = 500
+
+        self.start_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.count = 0
+
+    def onTick(self, tick):
+        line = (f"{tick.exchange}.{tick.symbol},"  # 合约代码.交易所代码
+                # f"{tick.date} {tick.time},"  # 时间 20220511 11:20:56.5 type=str
+                f"{tick.datetime},"  # 时间 2022-05-12 21:18:35.540000 type=str
+                f"{tick.lastPrice},"  # 最新成交价
+                f"{tick.lastVolume},"  # 最新成交量
+                f"{tick.volume},"  # 今天总成交量
+                f"{tick.openInterest},"  # 持仓量
+                f"{tick.openPrice},"  # 今日开盘价
+                f"{tick.highPrice},"  # 今日最高价
+                f"{tick.lowPrice},"  # 今日最低价
+                f"{tick.preClosePrice},"  # 昨收盘价
+                f"{tick.PreSettlementPrice},"  # 昨结算价
+                f"{tick.upperLimit},"  # 涨停价
+                f"{tick.lowerLimit},"  # 跌停价
+                f"{tick.turnover},"  # 成交额
+                f"{tick.bidPrice1},"
+                f"{tick.bidPrice2},"
+                f"{tick.bidPrice3},"
+                f"{tick.bidPrice4},"
+                f"{tick.bidPrice5},"
+                f"{tick.askPrice1},"
+                f"{tick.askPrice2},"
+                f"{tick.askPrice3},"
+                f"{tick.askPrice4},"
+                f"{tick.askPrice5},"
+                f"{tick.bidVolume1},"
+                f"{tick.bidVolume2},"
+                f"{tick.bidVolume3},"
+                f"{tick.bidVolume4},"
+                f"{tick.bidVolume5},"
+                f"{tick.askVolume1},"
+                f"{tick.askVolume2},"
+                f"{tick.askVolume3},"
+                f"{tick.askVolume4},"
+                f"{tick.askVolume5}"
+                "\n")
+        # if tick.lastPrice == 0 or tick.askPrice1 == 0 or tick.bidPrice1 == 0:  # 涨跌停和集合竞价
+        #    self.output(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: passed tick: {line}")
+        self.csv.write(line)
+
+        self.count = self.count + 1
+        if self.count % self.fresh_count == 0:
+            self.putEvent()
+
+    def onBar(self, bar):
+        pass
+
+    def onTrade(self, trade, log=True):
+        pass
+
+    def onOrder(self, order, log=False):
+        pass
+
+    def onStart(self):
+        csv_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.csv_path = f"{self.save_path}/{csv_name}.csv"
+        self.csv = open(self.csv_path, "w")
+        headers = ("symbol,"
+                   "datetime,"
+                   "lastPrice,"
+                   "lastVolume,"
+                   "volume,"
+                   "openInterest,"
+                   "openPrice,"
+                   "highPrice,"
+                   "lowPrice,"
+                   "preClosePrice,"
+                   "PreSettlementPrice,"
+                   "upperLimit,"
+                   "lowerLimit,"
+                   "turnover,"
+                   "bidPrice1,"
+                   "bidPrice2,"
+                   "bidPrice3,"
+                   "bidPrice4,"
+                   "bidPrice5,"
+                   "askPrice1,"
+                   "askPrice2,"
+                   "askPrice3,"
+                   "askPrice4,"
+                   "askPrice5,"
+                   "bidVolume1,"
+                   "bidVolume2,"
+                   "bidVolume3,"
+                   "bidVolume4,"
+                   "bidVolume5,"
+                   "askVolume1,"
+                   "askVolume2,"
+                   "askVolume3,"
+                   "askVolume4,"
+                   "askVolume5"
+                   "\n")
+        self.csv.write(headers)
+        self.csv.flush()
+        self.output(f"save csv to: {self.csv_path}")
+        super().onStart()
+
+    def onStop(self):
+        if self.csv and not self.csv.closed:
+            self.csv.flush()
+            self.csv.close()
+            self.output(f"finish and close csv in: {self.csv_path}")
+        super().onStop()
