@@ -5,26 +5,26 @@ from ctaTemplate import *
 exch_symbols = {
     # 上海期货交易所 - 20
     "SHFE": [
-        "cu",  # 铜
-        "bc",  # 铜(BC)
-        "al",  # 铝
-        "zn",  # 锌
-        "pb",  # 铅
-        "ni",  # 镍
-        "sn",  # 锡
-        "au",  # 黄金
         "ag",  # 白银
-        "rb",  # 螺纹钢
-        "wr",  # 线材
-        "hc",  # 热轧卷板
-        "ss",  # 不锈钢
-        "sc",  # 原油
-        "lu",  # 低硫燃料油
-        "fu",  # 燃料油
+        "al",  # 铝
+        "au",  # 黄金
+        "bc",  # 铜(BC)
         "bu",  # 石油沥青
-        "ru",  # 天然橡胶
+        "cu",  # 铜
+        "fu",  # 燃料油
+        "hc",  # 热轧卷板
+        "lu",  # 低硫燃料油
+        "ni",  # 镍
         "nr",  # 20号胶
-        "sp"  # 纸浆
+        "pb",  # 铅
+        "rb",  # 螺纹钢
+        "ru",  # 天然橡胶
+        "sc",  # 原油
+        "sn",  # 锡
+        "sp",  # 纸浆
+        "ss",  # 不锈钢
+        "wr",  # 线材
+        "zn",  # 锌
     ],
     # 大连商品交易所 - 21
     "DCE": [
@@ -48,7 +48,7 @@ exch_symbols = {
         "pp",  # 聚丙烯苯(PP)
         "rr",  # 粳米
         "v",  # 聚氯乙烯(PVE)
-        "y"  # 豆油
+        "y",  # 豆油
     ],
     # 郑州商品交易所 - 23
     "CZCE": [
@@ -82,28 +82,49 @@ exch_symbols = {
 class A_Tick_Crawler(CtaTemplate):
     """Tick Crawler"""
     className = 'A_Tick_Crawler'
-    author = 'Jonas'
-
-    # 参数映射表: 动态设置参数用
-    paramMap = {
-        "vtSymbol": "合约列表",
-        "exchange": "交易所",
-        "save_path": "数据保存路径",
-        "fresh_count": "刷新频率"
-    }
-    paramList = list(paramMap.keys())
-
-    # 变量映射表: 显示在UI上用
-    varMap = {
-        "start_time": "StartTime",
-        "count": "Count"
-    }
-    varList = list(varMap.keys())
+    author = 'Jonas Dong'
 
     def __init__(self, ctaEngine=None, setting={}):
+        self.__init_storage()
+        self.__init_paramVar()
+
         super().__init__(ctaEngine, setting)
 
-        # extract all contracts of 3 main exchange
+        self.vtSymbol, self.exchange = self.__query_all_symbols()  # set default parameters
+        self.fresh_count = 500
+        self.start_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+        self.count = 0
+
+    def __init_paramVar(self):
+        # 参数映射表: 动态设置参数用
+        self.paramMap = {
+            "vtSymbol": "合约列表",
+            "exchange": "交易所",
+            "save_path": "数据保存路径",
+            "fresh_count": "刷新频率"
+        }
+        self.paramList = list(self.paramMap.keys())
+
+        # 变量映射表: 显示在UI上用
+        self.varMap = {
+            "start_time": "StartTime",
+            "count": "Count"
+        }
+        self.varList = list(self.varMap.keys())
+
+    def __init_storage(self):
+        # create data directory
+        home_path = os.path.expanduser("~").replace("\\", "/")  # C:/Users/jonas
+        self.save_path = home_path + "/Desktop/data"
+        os.makedirs(self.save_path, exist_ok=True)
+
+        # delete last config file
+        config_path = home_path + "/AppData/Roaming/InfiniTrader_QhFangzhengzhongqi/pyStrategy/json/crawler.json"
+        if os.path.exists(config_path):
+            os.remove(config_path)
+
+    # all contracts of 3 main exchange
+    def __query_all_symbols(self):
         contract_list = []
         exchange_list = []
         for exch, codes in exch_symbols.items():
@@ -117,44 +138,51 @@ class A_Tick_Crawler(CtaTemplate):
                 for contract in contracts:
                     contract_list.append(contract)
                     exchange_list.append(exch)
-        self.output(f"contracts are: {','.join(contract_list)}")
+        # self.output(f"contracts are: {','.join(contract_list)}")
         self.output(f"contracts count: {len(contract_list)}")
-
-        # set default parameters
-        self.vtSymbol = ";".join(contract_list)
-        self.exchange = ";".join(exchange_list)
-        self.save_path = os.path.abspath(os.path.dirname(__file__))
-        self.fresh_count = 500
-
-        self.start_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.count = 0
+        return ";".join(contract_list), ";".join(exchange_list)
 
     def onTick(self, tick):
+        try:
+            line = self.build_line(tick)
+        except Exception as e:
+            return
+        # if tick.lastPrice == 0 or tick.askPrice1 == 0 or tick.bidPrice1 == 0:  # 涨跌停和集合竞价
+        #    self.output(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: passed tick: {line}")
+        self.csv.write(line)
+        self.count = self.count + 1
+        if self.count % self.fresh_count == 0:
+            self.putEvent()
+
+    def keep_float(self, num: float):
+        return int(num * 100) / 100
+
+    def build_line(self, tick):
         line = (f"{tick.exchange}.{tick.symbol},"  # 合约代码.交易所代码
                 # f"{tick.date} {tick.time},"  # 时间 20220511 11:20:56.5 type=str
-                f"{tick.datetime},"  # 时间 2022-05-12 21:18:35.540000 type=str
-                f"{tick.lastPrice},"  # 最新成交价
+                f"{tick.datetime.strftime('%Y-%m-%d %H:%M:%S.%f')},"  # 时间 2022-05-12 21:18:35.540000
+                f"{self.keep_float(tick.lastPrice)},"  # 最新成交价
                 f"{tick.lastVolume},"  # 最新成交量
                 f"{tick.volume},"  # 今天总成交量
                 f"{tick.openInterest},"  # 持仓量
-                f"{tick.openPrice},"  # 今日开盘价
-                f"{tick.highPrice},"  # 今日最高价
-                f"{tick.lowPrice},"  # 今日最低价
-                f"{tick.preClosePrice},"  # 昨收盘价
-                f"{tick.PreSettlementPrice},"  # 昨结算价
-                f"{tick.upperLimit},"  # 涨停价
-                f"{tick.lowerLimit},"  # 跌停价
-                f"{tick.turnover},"  # 成交额
-                f"{tick.bidPrice1},"
-                f"{tick.bidPrice2},"
-                f"{tick.bidPrice3},"
-                f"{tick.bidPrice4},"
-                f"{tick.bidPrice5},"
-                f"{tick.askPrice1},"
-                f"{tick.askPrice2},"
-                f"{tick.askPrice3},"
-                f"{tick.askPrice4},"
-                f"{tick.askPrice5},"
+                f"{self.keep_float(tick.openPrice)},"  # 今日开盘价
+                f"{self.keep_float(tick.highPrice)},"  # 今日最高价
+                f"{self.keep_float(tick.lowPrice)},"  # 今日最低价
+                f"{self.keep_float(tick.preClosePrice)},"  # 昨收盘价
+                f"{self.keep_float(tick.PreSettlementPrice)},"  # 昨结算价
+                f"{self.keep_float(tick.upperLimit)},"  # 涨停价
+                f"{self.keep_float(tick.lowerLimit)},"  # 跌停价
+                f"{self.keep_float(tick.turnover)},"  # 成交额
+                f"{self.keep_float(tick.bidPrice1)},"
+                f"{self.keep_float(tick.bidPrice2)},"
+                f"{self.keep_float(tick.bidPrice3)},"
+                f"{self.keep_float(tick.bidPrice4)},"
+                f"{self.keep_float(tick.bidPrice5)},"
+                f"{self.keep_float(tick.askPrice1)},"
+                f"{self.keep_float(tick.askPrice2)},"
+                f"{self.keep_float(tick.askPrice3)},"
+                f"{self.keep_float(tick.askPrice4)},"
+                f"{self.keep_float(tick.askPrice5)},"
                 f"{tick.bidVolume1},"
                 f"{tick.bidVolume2},"
                 f"{tick.bidVolume3},"
@@ -166,26 +194,19 @@ class A_Tick_Crawler(CtaTemplate):
                 f"{tick.askVolume4},"
                 f"{tick.askVolume5}"
                 "\n")
-        # if tick.lastPrice == 0 or tick.askPrice1 == 0 or tick.bidPrice1 == 0:  # 涨跌停和集合竞价
-        #    self.output(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: passed tick: {line}")
-        self.csv.write(line)
-
-        self.count = self.count + 1
-        if self.count % self.fresh_count == 0:
-            self.putEvent()
+        return line
 
     def onBar(self, bar):
         pass
 
     def onTrade(self, trade, log=True):
-        pass
+        self.output(f"onTrade: {trade}")
 
     def onOrder(self, order, log=False):
-        pass
+        self.output(f"onOrder: {order}")
 
     def onStart(self):
-        csv_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.csv_path = f"{self.save_path}/{csv_name}.csv"
+        self.csv_path = f"{self.save_path}/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         self.csv = open(self.csv_path, "w")
         headers = ("symbol,"
                    "datetime,"
