@@ -84,11 +84,11 @@ class A_Tick_Crawler(CtaTemplate):
     className = 'A_Tick_Crawler'
     author = 'Jonas Dong'
 
-    def __init__(self, ctaEngine=None, setting={}):
+    def __init__(self) -> None:
+        super().__init__()
+        
         self.__init_storage()
         self.__init_paramVar()
-
-        super().__init__(ctaEngine, setting)
 
         self.vtSymbol, self.exchange = self.__query_all_symbols()  # set default parameters
         self.fresh_count = 500
@@ -103,14 +103,13 @@ class A_Tick_Crawler(CtaTemplate):
             "save_path": "数据保存路径",
             "fresh_count": "刷新频率"
         }
-        self.paramList = list(self.paramMap.keys())
 
         # 变量映射表: 显示在UI上用
         self.varMap = {
             "start_time": "StartTime",
             "count": "Count"
         }
-        self.varList = list(self.varMap.keys())
+
 
     def __init_storage(self):
         # create data directory
